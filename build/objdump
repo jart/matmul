@@ -1,2 +1,3 @@
 #!/bin/sh
 exec objdump "$@"
+# exec aarch64-unknown-cosmo-objdump $1 ${2%/*}/.aarch64/${2##*/}

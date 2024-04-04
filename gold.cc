@@ -18,16 +18,23 @@
 #include <cmath>
 #include <cstdio>
 
-void dgemm(long m, long n, long k, float alpha,  //
-           const float *A, long lda,             //
-           const float *B, long ldb, float beta, //
-           float *C, long ldc) {
-#pragma omp parallel for collapse(2) if (m * n * k > 30000)
-    for (long i = 0; i < m; ++i)
-        for (long j = 0; j < n; ++j) {
+void dgemm(int m, int n, int k, float alpha,    //
+           const float *A, int lda,             //
+           const float *B, int ldb, float beta, //
+           float *C, int ldc) {
+#pragma omp parallel for collapse(2) if (1ll * m * n * k > 30000)
+    for (int i = 0; i < m; ++i)
+        for (int j = 0; j < n; ++j) {
             double sum = 0;
-            for (long l = 0; l < k; ++l)
-                sum += A[lda * i + l] * B[ldb * j + l];
+            double err = 0;
+            for (int l = 0; l < k; ++l) {
+                double a = A[lda * i + l];
+                double b = B[ldb * j + l];
+                double y = a * b - err;
+                double t = sum + y;
+                err = (t - sum) - y;
+                sum = t;
+            }
             C[ldc * j + i] = sum;
         }
 }

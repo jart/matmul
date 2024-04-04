@@ -68,8 +68,8 @@
 typedef long long i64;
 typedef unsigned long long u64;
 
-void dgemm(long, long, long, float, const float *, long, const float *, long,
-           float, float *, long);
+void dgemm(int, int, int, float, const float *, int, const float *, int, float,
+           float *, int);
 double diff(long, long, const float *, long, const float *, long);
 double diff(long, long, const double *, long, const float *, long);
 
@@ -79,19 +79,6 @@ unsigned long long lemur(void) {
     static unsigned __int128 s = 2131259787901769494;
     return (s *= 15750249268501108917ull) >> 64;
 }
-
-struct Map {
-    long p;
-    long e;
-};
-
-struct Memory {
-    std::atomic_long spot;
-    std::mutex lock;
-    std::vector<Map> maps;
-};
-
-static Memory g_memory{ATOMIC_VAR_INIT(MEMORYLOC)};
 
 NOINLINE void rngset(char *p, long n) {
     long i = 0;
@@ -103,55 +90,6 @@ NOINLINE void rngset(char *p, long n) {
     x = lemur();
     while (i < n)
         p[i++] = x, x >>= 8;
-}
-
-template <typename T>
-NOINLINE T *new_matrix(long m, long n = 1, i64 *out_ldn = nullptr, long b = 1) {
-    long ldn = (n + b - 1) & -b;
-    long size = sizeof(T) * m * ldn;
-    long pagesz = sysconf(_SC_PAGESIZE);
-    long addr = g_memory.spot.fetch_add(MEMORYLOC, std::memory_order_relaxed);
-    g_memory.spot += MEMORYLOC;
-    if (size) {
-        char *ptr = (char *)mmap((void *)addr, size, PROT_READ | PROT_WRITE,
-                                 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (ptr == MAP_FAILED) {
-            fprintf(stderr, "error: out of memory: %s\n", strerror(errno));
-            _Exit(1);
-        }
-        addr = (long)ptr;
-    }
-    std::unique_lock<std::mutex> lock(g_memory.lock);
-    long true_size = (size + pagesz - 1) & -pagesz;
-    // rngset((char *)addr, true_size);
-    Map map{addr, addr + true_size};
-    g_memory.maps.emplace_back(std::move(map));
-    addr += true_size - size;
-    addr &= -(b * sizeof(T));
-    if (out_ldn)
-        *out_ldn = ldn;
-    return (T *)addr;
-}
-
-template <typename T> NOINLINE void delete_matrix(T *matrix) {
-    std::unique_lock<std::mutex> lock(g_memory.lock);
-    long p = (long)matrix;
-    std::vector<Map>::reverse_iterator i;
-    for (i = g_memory.maps.rbegin(); i != g_memory.maps.rend(); ++i) {
-        if ((p >= i->p && p < i->e) || (p == i->p && p == i->e)) {
-            if (p >= i->p && p < i->e) {
-                if (munmap((void *)i->p, i->e - i->p)) {
-                    fprintf(stderr, "error: munmap failed: %s\n",
-                            strerror(errno));
-                    _Exit(1);
-                }
-            }
-            g_memory.maps.erase(--(i.base()));
-            return;
-        }
-    }
-    fprintf(stderr, "error: map not found: %#lx\n", p);
-    _Exit(1);
 }
 
 template <typename TA>
@@ -275,7 +213,10 @@ i64 micros(void) {
             asm volatile("" ::: "memory");                                     \
         }                                                                      \
         i64 t2 = micros();                                                     \
-        printf("%8lld µs %s\n", (t2 - t1 + ITERATIONS - 1) / ITERATIONS, #x);  \
+        printf("%8lld µs %s %g gigaflops\n",                                   \
+               (t2 - t1 + ITERATIONS - 1) / ITERATIONS, #x,                    \
+               1e6 / ((t2 - t1 + ITERATIONS - 1) / ITERATIONS) * m * n * k *   \
+                   1e-9);                                                      \
     } while (0)
 
 void log_mb(i64 m, i64 n, i64 k) {
