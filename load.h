@@ -10,8 +10,6 @@
 #include <immintrin.h>
 #endif
 
-typedef _Float16 half;
-
 /**
  * Google Brain 16-bit floating point number.
  *
@@ -103,14 +101,6 @@ template <> inline float load(const float *p) {
 template <> inline float32x4_t load(const float *p) {
     return vld1q_f32(p);
 }
-#if !defined(_MSC_VER)
-template <> inline float16x8_t load(const half *p) {
-    return vld1q_f16((const float16_t *)p);
-}
-template <> inline float32x4_t load(const half *p) {
-    return vcvt_f32_f16(vld1_f16((const float16_t *)p));
-}
-#endif // _MSC_VER
 #endif // __ARM_NEON
 
 #if defined(__SSE__) || defined(__AVX__) || defined(__AVX2__) || defined(__AVX512F__)
@@ -125,18 +115,9 @@ template <> inline __m256 load(const float *p) {
 }
 #endif // __AVX__
 
-#if defined(__F16C__)
-template <> inline __m256 load(const half *p) {
-    return _mm256_cvtph_ps(_mm_loadu_si128((const __m128i *)p));
-}
-#endif // __F16C__
-
 #if defined(__AVX512F__)
 template <> inline __m512 load(const float *p) {
     return _mm512_loadu_ps(p);
-}
-template <> inline __m512 load(const half *p) {
-    return _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i *)p));
 }
 #endif // __AVX512F__
 
