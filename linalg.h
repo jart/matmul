@@ -48,28 +48,26 @@
 #endif
 
 #ifndef NDEBUG
-#define ASSERT(x)                                                              \
-    do {                                                                       \
-        if (!(x)) {                                                            \
-            fprintf(stderr, "%s:%d: assertion failed: %s\n", __FILE__,         \
-                    __LINE__, #x);                                             \
-            __builtin_trap();                                                  \
-        }                                                                      \
+#define ASSERT(x) \
+    do { \
+        if (!(x)) { \
+            fprintf(stderr, "%s:%d: assertion failed: %s\n", __FILE__, __LINE__, #x); \
+            __builtin_trap(); \
+        } \
     } while (0)
 #else
-#define ASSERT(x)                                                              \
-    do {                                                                       \
-        if (!(x)) {                                                            \
-            __builtin_unreachable();                                           \
-        }                                                                      \
+#define ASSERT(x) \
+    do { \
+        if (!(x)) { \
+            __builtin_unreachable(); \
+        } \
     } while (0)
 #endif
 
 typedef long long i64;
 typedef unsigned long long u64;
 
-void dgemm(int, int, int, float, const float *, int, const float *, int, float,
-           float *, int);
+void dgemm(int, int, int, float, const float *, int, const float *, int, float, float *, int);
 double diff(long, long, const float *, long, const float *, long);
 double diff(long, long, const double *, long, const float *, long);
 
@@ -92,8 +90,7 @@ NOINLINE void rngset(char *p, long n) {
         p[i++] = x, x >>= 8;
 }
 
-template <typename TA>
-NOINLINE void show(FILE *f, i64 max, i64 m, i64 n, const TA *A, i64 lda) {
+template <typename TA> NOINLINE void show(FILE *f, i64 max, i64 m, i64 n, const TA *A, i64 lda) {
     flockfile(f);
     fprintf(f, "      ");
     for (i64 i = 0; i < n && i < max; ++i) {
@@ -125,8 +122,7 @@ NOINLINE void show(FILE *f, i64 max, i64 m, i64 n, const TA *A, i64 lda) {
 }
 
 template <typename TA, typename TB>
-NOINLINE void show(FILE *f, i64 max, i64 m, i64 n, const TA *A, i64 lda,
-                   const TB *B, i64 ldb) {
+NOINLINE void show(FILE *f, i64 max, i64 m, i64 n, const TA *A, i64 lda, const TB *B, i64 ldb) {
     flockfile(f);
     fprintf(f, "      ");
     for (i64 i = 0; i < n && i < max; ++i) {
@@ -161,9 +157,8 @@ NOINLINE void show(FILE *f, i64 max, i64 m, i64 n, const TA *A, i64 lda,
 }
 
 template <typename TA, typename TB>
-NOINLINE void show_error(FILE *f, i64 max, i64 m, i64 n, const TA *A, i64 lda,
-                         const TB *B, i64 ldb, const char *file, int line,
-                         double sad, double tol) {
+NOINLINE void show_error(FILE *f, i64 max, i64 m, i64 n, const TA *A, i64 lda, const TB *B, i64 ldb,
+                         const char *file, int line, double sad, double tol) {
     flockfile(f);
     fprintf(f, "%s:%d: sad %.17g exceeds %g (%s)\nwant\n", file, line, sad, tol,
             is_self_testing ? is_self_testing : "n/a");
@@ -175,8 +170,8 @@ NOINLINE void show_error(FILE *f, i64 max, i64 m, i64 n, const TA *A, i64 lda,
 }
 
 template <typename TA, typename TB>
-NOINLINE void check(double tol, i64 m, i64 n, const TA *A, i64 lda, const TB *B,
-                    i64 ldb, const char *file, int line) {
+NOINLINE void check(double tol, i64 m, i64 n, const TA *A, i64 lda, const TB *B, i64 ldb,
+                    const char *file, int line) {
     double sad = diff(m, n, A, lda, B, ldb);
     if (sad <= tol) {
         if (!is_self_testing)
@@ -194,8 +189,7 @@ NOINLINE void check(double tol, i64 m, i64 n, const TA *A, i64 lda, const TB *B,
     }
 }
 
-#define check(tol, m, n, A, lda, B, ldb)                                       \
-    check(tol, m, n, A, lda, B, ldb, __FILE__, __LINE__)
+#define check(tol, m, n, A, lda, B, ldb) check(tol, m, n, A, lda, B, ldb, __FILE__, __LINE__)
 
 i64 micros(void) {
     struct timespec ts;
@@ -203,33 +197,28 @@ i64 micros(void) {
     return ts.tv_sec * 1000000 + (ts.tv_nsec + 999) / 1000;
 }
 
-#define bench(x)                                                               \
-    do {                                                                       \
-        x;                                                                     \
-        i64 t1 = micros();                                                     \
-        for (i64 i = 0; i < ITERATIONS; ++i) {                                 \
-            asm volatile("" ::: "memory");                                     \
-            x;                                                                 \
-            asm volatile("" ::: "memory");                                     \
-        }                                                                      \
-        i64 t2 = micros();                                                     \
-        printf("%8lld µs %s %g gigaflops\n",                                   \
-               (t2 - t1 + ITERATIONS - 1) / ITERATIONS, #x,                    \
-               1e6 / ((t2 - t1 + ITERATIONS - 1) / ITERATIONS) * m * n * k *   \
-                   1e-9);                                                      \
+#define bench(x) \
+    do { \
+        x; \
+        i64 t1 = micros(); \
+        for (i64 i = 0; i < ITERATIONS; ++i) { \
+            asm volatile("" ::: "memory"); \
+            x; \
+            asm volatile("" ::: "memory"); \
+        } \
+        i64 t2 = micros(); \
+        printf("%8lld µs %s %g gigaflops\n", (t2 - t1 + ITERATIONS - 1) / ITERATIONS, #x, \
+               1e6 / ((t2 - t1 + ITERATIONS - 1) / ITERATIONS) * m * n * k * 1e-9); \
     } while (0)
 
 void log_mb(i64 m, i64 n, i64 k) {
     double mb = 1024 * 1024;
-    fprintf(
-        stderr,
-        "[%lld, %lld] %g * [%lld, %lld] %g = [%lld, %lld] %g (%g mb total)\n",
-        m, k, m * k / mb, k, n, k * n / mb, m, n, m * n / mb,
-        (m * k + k * n + m * n) / mb);
+    fprintf(stderr, "[%lld, %lld] %g * [%lld, %lld] %g = [%lld, %lld] %g (%g mb total)\n", m, k,
+            m * k / mb, k, n, k * n / mb, m, n, m * n / mb, (m * k + k * n + m * n) / mb);
 }
 
-#define run(x)                                                                 \
-    printf("\n%s\n", #x);                                                      \
+#define run(x) \
+    printf("\n%s\n", #x); \
     x
 
 double real01(unsigned long x) { // (0,1)
@@ -254,8 +243,7 @@ template <typename T> NOINLINE void clear(i64 m, i64 n, T *A, i64 lda) {
         }
 }
 
-template <typename T>
-NOINLINE void broadcast(i64 m, i64 n, T *A, i64 lda, T x) {
+template <typename T> NOINLINE void broadcast(i64 m, i64 n, T *A, i64 lda, T x) {
     for (i64 i = 0; i < m; ++i)
         for (i64 j = 0; j < n; ++j) {
             A[lda * i + j] = x;
@@ -289,7 +277,8 @@ static int get_l1d_cache_size(void) {
     char buf[8] = {0};
     FILE *f = fopen("/sys/devices/system/cpu/cpu0/cache/index0/size", "rb");
     if (f) {
-        fread(buf, 1, 8, f);
+        int x = fread(buf, 1, 8, f);
+        (void)x;
         fclose(f);
         return std::max(4096, atoi(buf));
     } else {
