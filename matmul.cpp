@@ -294,91 +294,27 @@ class tinyBLAS {
   private:
     void mnpack(int m0, int m, int n0, int n, int k) {
         int mc, nc, mp, np;
-        switch ((std::min(m - m0, 8) << 4) | std::min(n - n0, 8)) {
+        switch ((std::min(m - m0, 5) << 4) | std::min(n - n0, 5)) {
 #if VECTOR_REGISTERS == 32
-        case 0x88:
-        case 0x87:
-        case 0x86:
-        case 0x85:
-        case 0x84:
-        case 0x83:
-            mc = 8;
-            nc = 3;
-            gemm<8, 3>(m0, m, n0, n, k);
-            break;
-        case 0x78:
-        case 0x77:
-        case 0x76:
-        case 0x75:
-        case 0x68:
-        case 0x67:
-        case 0x66:
-        case 0x65:
-        case 0x58:
-        case 0x57:
-        case 0x56:
         case 0x55:
             mc = 5;
             nc = 5;
             gemm<5, 5>(m0, m, n0, n, k);
-            break;
-        case 0x48:
-        case 0x47:
-        case 0x46:
-            mc = 4;
-            nc = 6;
-            gemm<4, 6>(m0, m, n0, n, k);
-            break;
-        case 0x74:
-        case 0x64:
-            mc = 6;
-            nc = 4;
-            gemm<6, 4>(m0, m, n0, n, k);
-            break;
-        case 0x38:
-            mc = 3;
-            nc = 8;
-            gemm<3, 8>(m0, m, n0, n, k);
             break;
         case 0x45:
             mc = 4;
             nc = 5;
             gemm<4, 5>(m0, m, n0, n, k);
             break;
-        case 0x73:
-            mc = 7;
-            nc = 3;
-            gemm<7, 3>(m0, m, n0, n, k);
-            break;
         case 0x54:
             mc = 5;
             nc = 4;
             gemm<5, 4>(m0, m, n0, n, k);
             break;
-        case 0x37:
-            mc = 3;
-            nc = 7;
-            gemm<3, 7>(m0, m, n0, n, k);
-            break;
-        case 0x82:
-            mc = 8;
-            nc = 2;
-            gemm<8, 2>(m0, m, n0, n, k);
-            break;
-        case 0x63:
-            mc = 6;
-            nc = 3;
-            gemm<6, 3>(m0, m, n0, n, k);
-            break;
         case 0x44:
             mc = 4;
             nc = 4;
             gemm<4, 4>(m0, m, n0, n, k);
-            break;
-        case 0x36:
-            mc = 3;
-            nc = 6;
-            gemm<3, 6>(m0, m, n0, n, k);
             break;
         case 0x53:
             mc = 5;
@@ -390,69 +326,15 @@ class tinyBLAS {
             nc = 5;
             gemm<3, 5>(m0, m, n0, n, k);
             break;
-        case 0x28:
-            mc = 2;
-            nc = 8;
-            gemm<2, 8>(m0, m, n0, n, k);
-            break;
-        case 0x72:
-            mc = 7;
-            nc = 2;
-            gemm<7, 2>(m0, m, n0, n, k);
-            break;
         case 0x43:
             mc = 4;
             nc = 3;
             gemm<4, 3>(m0, m, n0, n, k);
             break;
-        case 0x27:
-            mc = 2;
-            nc = 7;
-            gemm<2, 7>(m0, m, n0, n, k);
-            break;
-        case 0x34:
-            mc = 3;
-            nc = 4;
-            gemm<3, 4>(m0, m, n0, n, k);
-            break;
-        case 0x62:
-            mc = 6;
-            nc = 2;
-            gemm<6, 2>(m0, m, n0, n, k);
-            break;
-        case 0x26:
-            mc = 2;
-            nc = 6;
-            gemm<2, 6>(m0, m, n0, n, k);
-            break;
 #else
-        case 0x88:
-        case 0x87:
-        case 0x86:
-        case 0x85:
-        case 0x84:
-        case 0x83:
-        case 0x78:
-        case 0x77:
-        case 0x76:
-        case 0x75:
-        case 0x74:
-        case 0x73:
-        case 0x68:
-        case 0x67:
-        case 0x66:
-        case 0x65:
-        case 0x64:
-        case 0x63:
-        case 0x58:
-        case 0x57:
-        case 0x56:
         case 0x55:
         case 0x54:
         case 0x53:
-        case 0x48:
-        case 0x47:
-        case 0x46:
         case 0x45:
         case 0x44:
         case 0x43:
@@ -460,34 +342,12 @@ class tinyBLAS {
             nc = 3;
             gemm<4, 3>(m0, m, n0, n, k);
             break;
-        case 0x38:
-        case 0x37:
-        case 0x36:
         case 0x35:
+#endif
         case 0x34:
             mc = 3;
             nc = 4;
             gemm<3, 4>(m0, m, n0, n, k);
-            break;
-        case 0x82:
-        case 0x72:
-        case 0x62:
-            mc = 6;
-            nc = 2;
-            gemm<6, 2>(m0, m, n0, n, k);
-            break;
-        case 0x28:
-        case 0x27:
-        case 0x26:
-            mc = 2;
-            nc = 6;
-            gemm<2, 6>(m0, m, n0, n, k);
-            break;
-#endif
-        case 0x81:
-            mc = 8;
-            nc = 1;
-            gemm<8, 1>(m0, m, n0, n, k);
             break;
         case 0x52:
             mc = 5;
@@ -514,16 +374,6 @@ class tinyBLAS {
             nc = 4;
             gemm<2, 4>(m0, m, n0, n, k);
             break;
-        case 0x18:
-            mc = 1;
-            nc = 8;
-            gemm<1, 8>(m0, m, n0, n, k);
-            break;
-        case 0x71:
-            mc = 7;
-            nc = 1;
-            gemm<7, 1>(m0, m, n0, n, k);
-            break;
         case 0x32:
             mc = 3;
             nc = 2;
@@ -533,21 +383,6 @@ class tinyBLAS {
             mc = 2;
             nc = 3;
             gemm<2, 3>(m0, m, n0, n, k);
-            break;
-        case 0x17:
-            mc = 1;
-            nc = 7;
-            gemm<1, 7>(m0, m, n0, n, k);
-            break;
-        case 0x61:
-            mc = 6;
-            nc = 1;
-            gemm<6, 1>(m0, m, n0, n, k);
-            break;
-        case 0x16:
-            mc = 1;
-            nc = 6;
-            gemm<1, 6>(m0, m, n0, n, k);
             break;
         case 0x51:
             mc = 5;
