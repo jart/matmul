@@ -18,8 +18,8 @@
 #include <cmath>
 #include <cstdio>
 
-void dgemm(int m, int n, int k, float alpha,    //
-           const float *A, int lda,             //
+void dgemm(int m, int n, int k, float alpha, //
+           const float *A, int lda, //
            const float *B, int ldb, float beta, //
            float *C, int ldc) {
 #pragma omp parallel for collapse(2) if (1ll * m * n * k > 30000)
@@ -40,8 +40,7 @@ void dgemm(int m, int n, int k, float alpha,    //
 }
 
 template <typename T>
-double diff_impl(long m, long n, const T *Want, long lda, const float *Got,
-                 long ldb) {
+double diff_impl(long m, long n, const T *Want, long lda, const float *Got, long ldb) {
     double s = 0;
     int got_nans = 0;
     int want_nans = 0;
@@ -62,12 +61,10 @@ double diff_impl(long m, long n, const T *Want, long lda, const float *Got,
     return s / (m * n);
 }
 
-double diff(long m, long n, const float *Want, long lda, const float *Got,
-            long ldb) {
+double diff(long m, long n, const float *Want, long lda, const float *Got, long ldb) {
     return diff_impl(m, n, Want, lda, Got, ldb);
 }
 
-double diff(long m, long n, const double *Want, long lda, const float *Got,
-            long ldb) {
+double diff(long m, long n, const double *Want, long lda, const float *Got, long ldb) {
     return diff_impl(m, n, Want, lda, Got, ldb);
 }

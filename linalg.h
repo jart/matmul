@@ -32,7 +32,7 @@
 #endif
 
 #if defined(__OPTIMIZE__) && !defined(__SANITIZE_ADDRESS__)
-#define ITERATIONS 30
+#define ITERATIONS 1
 #else
 #define ITERATIONS 1
 #endif
@@ -88,6 +88,20 @@ NOINLINE void rngset(char *p, long n) {
     x = lemur();
     while (i < n)
         p[i++] = x, x >>= 8;
+}
+
+template <typename T> NOINLINE T *new_matrix(i64 m, i64 n = 1, i64 *out_ldn = nullptr) {
+    int a = 4096;
+    int b = a / sizeof(T);
+    i64 ldn = (n + b - 1) & -b;
+    i64 size = sizeof(T) * m * ldn;
+    if (out_ldn)
+        *out_ldn = ldn;
+    return (T *)aligned_alloc(a, size);
+}
+
+template <typename T> NOINLINE void delete_matrix(T *matrix) {
+    free(matrix);
 }
 
 template <typename TA> NOINLINE void show(FILE *f, i64 max, i64 m, i64 n, const TA *A, i64 lda) {

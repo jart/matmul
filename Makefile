@@ -44,6 +44,10 @@ o/$(MODE)/%.o: %.cc linalg.h Makefile
 	@mkdir -p $(@D)
 	$(CXX) $(COPTS) $(CXXFLAGS) $(CPPFLAGS) $(TARGET_ARCH) -c -o $@ $<
 
+o/$(MODE)/%.o: %.cpp linalg.h Makefile
+	@mkdir -p $(@D)
+	$(CXX) $(COPTS) $(CXXFLAGS) $(CPPFLAGS) $(TARGET_ARCH) -c -o $@ $<
+
 o/$(MODE)/%.o: %.c Makefile
 	@mkdir -p $(@D)
 	$(CC) $(COPTS) $(CFLAGS) $(CPPFLAGS) $(TARGET_ARCH) -c -o $@ $<
