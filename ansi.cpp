@@ -15,21 +15,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/*
-
-g++ -g -Wall -O3 -fopenmp -pthread -DMKL_ILP64 \
-  -I/opt/intel/oneapi/mkl/2024.1/include -Wframe-larger-than=65536 \
-  -Walloca-larger-than=65536 -march=native -c -o asd.o asd.cpp
-g++ -g -Wall -O3 -fopenmp -pthread -DMKL_ILP64 \
-  -I/opt/intel/oneapi/mkl/2024.1/include -Wframe-larger-than=65536 \
-  -Walloca-larger-than=65536 -o asd asd.o -Wl,--start-group \
-  /opt/intel/oneapi/mkl/2024.1/lib/libmkl_intel_ilp64.a \
-  /opt/intel/oneapi/mkl/2024.1/lib/libmkl_gnu_thread.a \
-  /opt/intel/oneapi/mkl/2024.1/lib/libmkl_core.a -Wl,--end-group -lm
-./asd
-
-*/
-
 //
 //                   _   _          ___ _      _   ___
 //                  | |_(_)_ _ _  _| _ ) |    /_\ / __|
@@ -55,6 +40,8 @@ g++ -g -Wall -O3 -fopenmp -pthread -DMKL_ILP64 \
 
 #pragma GCC diagnostic ignored "-Wpedantic"
 #pragma GCC diagnostic ignored "-Wnarrowing"
+#pragma GCC diagnostic ignored "-Wmissing-braces"
+#pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wignored-attributes"
 
 #include <algorithm>
@@ -63,6 +50,7 @@ g++ -g -Wall -O3 -fopenmp -pthread -DMKL_ILP64 \
 #include <cstdlib>
 #include <ctime>
 #include <errno.h>
+#include <string.h>
 #include <thread>
 #include <unistd.h>
 #ifdef __ARM_NEON
@@ -71,7 +59,6 @@ g++ -g -Wall -O3 -fopenmp -pthread -DMKL_ILP64 \
 #ifdef __x86_64__
 #include <immintrin.h>
 #endif
-#include <mkl_blas.h>
 
 #ifdef _OPENMP
 #define HAVE_OPENMP 1
@@ -114,168 +101,102 @@ template <typename T> void randomize(int m, int n, T *A, int lda) {
             A[lda * i + j] = numba();
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// VECTORIZED ARITHMETIC OPERATIONS
-
-inline float add(float x, float y) {
-    return x + y;
-}
-inline float sub(float x, float y) {
-    return x - y;
-}
-inline float mul(float x, float y) {
-    return x * y;
+template <typename V, typename T> V load(const T *p) {
+    V v;
+    memcpy(&v, p, sizeof(v));
+    return v;
 }
 
-#if defined(__SSE__) || defined(__AVX__) || defined(__AVX2__) || defined(__AVX512F__)
-inline __m128 add(__m128 x, __m128 y) {
-    return _mm_add_ps(x, y);
-}
-inline __m128 sub(__m128 x, __m128 y) {
-    return _mm_sub_ps(x, y);
-}
-inline __m128 mul(__m128 x, __m128 y) {
-    return _mm_mul_ps(x, y);
-}
-#endif // __SSE__
-
-#if defined(__AVX__) || defined(__AVX2__) || defined(__AVX512F__)
-inline __m256 add(__m256 x, __m256 y) {
-    return _mm256_add_ps(x, y);
-}
-inline __m256 sub(__m256 x, __m256 y) {
-    return _mm256_sub_ps(x, y);
-}
-inline __m256 mul(__m256 x, __m256 y) {
-    return _mm256_mul_ps(x, y);
-}
-#endif // __AVX__
-
-#if defined(__AVX512F__)
-inline __m512 add(__m512 x, __m512 y) {
-    return _mm512_add_ps(x, y);
-}
-inline __m512 sub(__m512 x, __m512 y) {
-    return _mm512_sub_ps(x, y);
-}
-inline __m512 mul(__m512 x, __m512 y) {
-    return _mm512_mul_ps(x, y);
-}
-#endif // __AVX512F__
-
-#if defined(__ARM_NEON)
-inline float32x4_t add(float32x4_t x, float32x4_t y) {
-    return vaddq_f32(x, y);
-}
-inline float32x4_t sub(float32x4_t x, float32x4_t y) {
-    return vsubq_f32(x, y);
-}
-inline float32x4_t mul(float32x4_t x, float32x4_t y) {
-    return vmulq_f32(x, y);
-}
-#endif // __ARM_NEON
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// VECTORIZED HORIZONTAL SUM
-
-inline float hsum(float x) {
-    return x;
+template <int N> inline float hsum(const float *p) {
+    return hsum<N / 2>(p) + hsum<N / 2>(p + N / 2);
 }
 
-#if defined(__ARM_NEON)
-inline float hsum(float32x4_t x) {
-    return vaddvq_f32(x);
-}
-#endif // __ARM_NEON
-
-#if defined(__SSE__) || defined(__AVX__) || defined(__AVX2__) || defined(__AVX512F__)
-inline float hsum(__m128 x) {
-#if defined(__AVX__) || defined(__AVX2__) || defined(__AVX512F__)
-    x = _mm_add_ps(x, _mm_movehl_ps(x, x));
-    x = _mm_add_ss(x, _mm_movehdup_ps(x));
-#else
-    __m128 t;
-    t = _mm_shuffle_ps(x, x, _MM_SHUFFLE(2, 3, 0, 1));
-    x = _mm_add_ps(x, t);
-    t = _mm_movehl_ps(t, x);
-    x = _mm_add_ss(x, t);
-#endif
-    return _mm_cvtss_f32(x);
-}
-#endif
-
-#if defined(__AVX__) || defined(__AVX2__) || defined(__AVX512F__)
-inline float hsum(__m256 x) {
-    return hsum(_mm_add_ps(_mm256_extractf128_ps(x, 1), _mm256_castps256_ps128(x)));
-}
-#endif // __AVX__
-
-#if defined(__AVX512F__)
-inline float hsum(__m512 x) {
-    return _mm512_reduce_add_ps(x);
-}
-#endif // __AVX512F__
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// VECTORIZED MEMORY LOADING
-
-template <typename T, typename U> T load(const U *);
-
-template <> inline float load(const float *p) {
+template <> inline float hsum<1>(const float *p) {
     return *p;
 }
 
-#if defined(__ARM_NEON)
-template <> inline float32x4_t load(const float *p) {
-    return vld1q_f32(p);
-}
-#endif // __ARM_NEON
+template <int N, typename T> struct Vector {
+    T v[N];
 
-#if defined(__SSE__) || defined(__AVX__) || defined(__AVX2__) || defined(__AVX512F__)
-template <> inline __m128 load(const float *p) {
-    return _mm_loadu_ps(p);
-}
-#endif // __SSE__
+    operator float() {
+        return hsum<N>(v);
+    }
 
-#if defined(__AVX__) || defined(__AVX2__) || defined(__AVX512F__)
-template <> inline __m256 load(const float *p) {
-    return _mm256_loadu_ps(p);
-}
-#endif // __AVX__
+    void operator+=(Vector<N, T> x) {
+        for (int i = 0; i < N; ++i)
+            v[i] += x.v[i];
+    }
 
-#if defined(__AVX512F__)
-template <> inline __m512 load(const float *p) {
-    return _mm512_loadu_ps(p);
-}
-#endif // __AVX512F__
+    Vector<N, T> operator+(Vector<N, T> x) {
+        Vector<N, T> r;
+        for (int i = 0; i < N; ++i)
+            r.v[i] = v[i] + x.v[i];
+        return r;
+    }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// ABSTRACTIONS
+    Vector<N, T> operator-(Vector<N, T> x) {
+        Vector<N, T> r;
+        for (int i = 0; i < N; ++i)
+            r.v[i] = v[i] - x.v[i];
+        return r;
+    }
 
-/**
- * Computes a * b + c.
- *
- * This operation will become fused into a single arithmetic instruction
- * if the hardware has support for this feature, e.g. Intel Haswell+ (c.
- * 2013), AMD Bulldozer+ (c. 2011), etc.
- */
-template <typename T, typename U> inline U madd(T a, T b, U c) {
-    return add(mul(a, b), c);
-}
+    Vector<N, T> operator*(Vector<N, T> x) {
+        Vector<N, T> r;
+        for (int i = 0; i < N; ++i)
+            r.v[i] = v[i] * x.v[i];
+        return r;
+    }
+};
 
-/**
- * Computes a * b + c with error correction.
- *
- * @see W. Kahan, "Further remarks on reducing truncation errors,"
- *    Communications of the ACM, vol. 8, no. 1, p. 40, Jan. 1965,
- *    doi: 10.1145/363707.363723.
- */
-template <typename T, typename U> inline U madder(T a, T b, U c, U *e) {
-    U y = sub(mul(a, b), *e);
-    U t = add(c, y);
-    *e = sub(sub(t, c), y);
-    return t;
-}
+template <> struct Vector<4, float> {
+    float x;
+    float y;
+    float z;
+    float w;
+
+    operator float() {
+        return x + z + y + w;
+    }
+
+    void operator+=(Vector<4, float> rhs) {
+        x += rhs.x;
+        y += rhs.y;
+        z += rhs.z;
+        w += rhs.w;
+    }
+
+    Vector<4, float> operator+(Vector<4, float> x) {
+        return (Vector<4, float>){
+            x + x.x,
+            y + x.y,
+            z + x.z,
+            w + x.w,
+        };
+    }
+
+    Vector<4, float> operator-(Vector<4, float> x) {
+        return (Vector<4, float>){
+            x - x.x,
+            y - x.y,
+            z - x.z,
+            w - x.w,
+        };
+    }
+
+    Vector<4, float> operator*(Vector<4, float> x) {
+        return (Vector<4, float>){
+            x * x.x,
+            y * x.y,
+            z * x.z,
+            w * x.w,
+        };
+    }
+};
+
+struct f32x16 : public Vector<16, float> {};
+struct f32x8 : public Vector<8, float> {};
+struct f32x4 : public Vector<4, float> {};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // FLOATING POINT MATRIX MULTIPLICATION
@@ -294,75 +215,22 @@ class tinyBLAS {
   private:
     void mnpack(int m0, int m, int n0, int n, int k) {
         int mc, nc, mp, np;
-        switch ((std::min(m - m0, 5) << 4) | std::min(n - n0, 5)) {
-#if VECTOR_REGISTERS == 32
-        case 0x55:
-            mc = 5;
-            nc = 5;
-            gemm<5, 5>(m0, m, n0, n, k);
-            break;
-        case 0x45:
-            mc = 4;
-            nc = 5;
-            gemm<4, 5>(m0, m, n0, n, k);
-            break;
-        case 0x54:
-            mc = 5;
-            nc = 4;
-            gemm<5, 4>(m0, m, n0, n, k);
-            break;
-        case 0x44:
-            mc = 4;
-            nc = 4;
-            gemm<4, 4>(m0, m, n0, n, k);
-            break;
-        case 0x53:
-            mc = 5;
-            nc = 3;
-            gemm<5, 3>(m0, m, n0, n, k);
-            break;
-        case 0x35:
-            mc = 3;
-            nc = 5;
-            gemm<3, 5>(m0, m, n0, n, k);
-            break;
-        case 0x43:
-            mc = 4;
-            nc = 3;
-            gemm<4, 3>(m0, m, n0, n, k);
-            break;
-#else
-        case 0x55:
-        case 0x54:
-        case 0x53:
-        case 0x45:
+        switch ((std::min(m - m0, 4) << 4) | std::min(n - n0, 4)) {
         case 0x44:
         case 0x43:
             mc = 4;
             nc = 3;
             gemm<4, 3>(m0, m, n0, n, k);
             break;
-        case 0x35:
-#endif
         case 0x34:
             mc = 3;
             nc = 4;
             gemm<3, 4>(m0, m, n0, n, k);
             break;
-        case 0x52:
-            mc = 5;
-            nc = 2;
-            gemm<5, 2>(m0, m, n0, n, k);
-            break;
         case 0x33:
             mc = 3;
             nc = 3;
             gemm<3, 3>(m0, m, n0, n, k);
-            break;
-        case 0x25:
-            mc = 2;
-            nc = 5;
-            gemm<2, 5>(m0, m, n0, n, k);
             break;
         case 0x42:
             mc = 4;
@@ -384,11 +252,6 @@ class tinyBLAS {
             nc = 3;
             gemm<2, 3>(m0, m, n0, n, k);
             break;
-        case 0x51:
-            mc = 5;
-            nc = 1;
-            gemm<5, 1>(m0, m, n0, n, k);
-            break;
         case 0x41:
             mc = 4;
             nc = 1;
@@ -398,11 +261,6 @@ class tinyBLAS {
             mc = 2;
             nc = 2;
             gemm<2, 2>(m0, m, n0, n, k);
-            break;
-        case 0x15:
-            mc = 1;
-            nc = 5;
-            gemm<1, 5>(m0, m, n0, n, k);
             break;
         case 0x14:
             mc = 1;
@@ -459,16 +317,11 @@ class tinyBLAS {
             for (int l = 0; l < k; l += KN)
                 for (int j = 0; j < RN; ++j)
                     for (int i = 0; i < RM; ++i)
-                        Cv[j][i] = madd(load<VECTOR>(A + lda * (ii + i) + l), //
-                                        load<VECTOR>(B + ldb * (jj + j) + l), //
-                                        Cv[j][i]);
-            TC Cd[RN][RM];
+                        Cv[j][i] += load<VECTOR>(A + lda * (ii + i) + l) *
+                                    load<VECTOR>(B + ldb * (jj + j) + l);
             for (int j = 0; j < RN; ++j)
                 for (int i = 0; i < RM; ++i)
-                    Cd[j][i] = hsum(Cv[j][i]);
-            for (int j = 0; j < RN; ++j)
-                for (int i = 0; i < RM; ++i)
-                    C[ldc * (jj + j) + (ii + i)] = Cd[j][i];
+                    C[ldc * (jj + j) + (ii + i)] = Cv[j][i];
         }
     }
 
@@ -482,8 +335,8 @@ class tinyBLAS {
     const int nth;
 };
 
-static void llamafile_sgemm_impl(int m, int n, int k, const float *A, int lda, const float *B,
-                                 int ldb, float *C, int ldc, int ith, int nth) {
+static void ansi_sgemm_impl(int m, int n, int k, const float *A, int lda, const float *B, int ldb,
+                            float *C, int ldc, int ith, int nth) {
     assert(m >= 0);
     assert(n >= 0);
     assert(k >= 0);
@@ -496,34 +349,26 @@ static void llamafile_sgemm_impl(int m, int n, int k, const float *A, int lda, c
     assert(1ll * ldb * n <= 0x7fffffff);
     assert(1ll * ldc * n <= 0x7fffffff);
 #if defined(__AVX512F__)
-    assert(!(lda % (64 / sizeof(float))));
-    assert(!(ldb % (64 / sizeof(float))));
-    tinyBLAS<16, __m512, __m512, float, float, float> tb{A, lda, B, ldb, C, ldc, ith, nth};
-    tb.matmul(m, n, k);
+    assert(!(lda % 16));
+    assert(!(ldb % 16));
+    tinyBLAS<16, f32x16, f32x16, float, float, float> tb{A, lda, B, ldb, C, ldc, ith, nth};
 #elif defined(__AVX__) || defined(__AVX2__)
-    assert(!(lda % (32 / sizeof(float))));
-    assert(!(ldb % (32 / sizeof(float))));
-    tinyBLAS<8, __m256, __m256, float, float, float> tb{A, lda, B, ldb, C, ldc, ith, nth};
-    tb.matmul(m, n, k);
-#elif defined(__SSE__)
-    assert(!(lda % (16 / sizeof(float))));
-    assert(!(ldb % (16 / sizeof(float))));
-    tinyBLAS<4, __m128, __m128, float, float, float> tb{A, lda, B, ldb, C, ldc, ith, nth};
-    tb.matmul(m, n, k);
-#elif defined(__ARM_NEON)
-    assert(!(lda % (16 / sizeof(float))));
-    assert(!(ldb % (16 / sizeof(float))));
-    tinyBLAS<4, float32x4_t, float32x4_t, float, float, float> tb{A, lda, B, ldb, C, ldc, ith, nth};
-    tb.matmul(m, n, k);
+    assert(!(lda % 8));
+    assert(!(ldb % 8));
+    tinyBLAS<8, f32x8, f32x8, float, float, float> tb{A, lda, B, ldb, C, ldc, ith, nth};
+#elif defined(__SSE__) || defined(__ARM_NEON)
+    assert(!(lda % 4));
+    assert(!(ldb % 4));
+    tinyBLAS<4, f32x4, f32x4, float, float, float> tb{A, lda, B, ldb, C, ldc, ith, nth};
 #else
     tinyBLAS<1, float, float, float, float, float> tb{A, lda, B, ldb, C, ldc, ith, nth};
-    tb.matmul(m, n, k);
 #endif
+    tb.matmul(m, n, k);
 }
 
 } // namespace
 
-template <typename T, typename U> T *llamafile_malloc(int m, int n, U *out_lda) {
+template <typename T, typename U> T *ansi_malloc(int m, int n, U *out_lda) {
     void *ptr;
     int b = 64 / sizeof(T);
     int lda = (n + b - 1) & -b;
@@ -536,58 +381,50 @@ template <typename T, typename U> T *llamafile_malloc(int m, int n, U *out_lda) 
     return (T *)ptr;
 }
 
-template <typename T, typename U> T *llamafile_new_test_matrix(int m, int n, U *out_lda) {
-    T *A = llamafile_malloc<T>(m, n, out_lda);
+template <typename T, typename U> T *ansi_new_test_matrix(int m, int n, U *out_lda) {
+    T *A = ansi_malloc<T>(m, n, out_lda);
     randomize(m, n, A, *out_lda);
     clean(m, n, A, *out_lda);
     return A;
 }
 
-void llamafile_sgemm(int m, int n, int k, const float *A, int lda, const float *B, int ldb,
-                     float *C, int ldc, int ith, int nth) {
+void ansi_sgemm(int m, int n, int k, const float *A, int lda, const float *B, int ldb, float *C,
+                int ldc, int ith, int nth) {
     if (nth) {
-        llamafile_sgemm_impl(m, n, k, A, lda, B, ldb, C, ldc, ith, nth);
+        ansi_sgemm_impl(m, n, k, A, lda, B, ldb, C, ldc, ith, nth);
     } else if (!HAVE_OPENMP || 1ll * n * m * k < 3000000) {
-        llamafile_sgemm_impl(m, n, k, A, lda, B, ldb, C, ldc, 0, 1);
+        ansi_sgemm_impl(m, n, k, A, lda, B, ldb, C, ldc, 0, 1);
     } else {
         nth = sysconf(_SC_NPROCESSORS_ONLN);
 #pragma omp parallel for
         for (ith = 0; ith < nth; ++ith)
-            llamafile_sgemm_impl(m, n, k, A, lda, B, ldb, C, ldc, ith, nth);
+            ansi_sgemm_impl(m, n, k, A, lda, B, ldb, C, ldc, ith, nth);
     }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// MKL_INT m = 512;
-// MKL_INT n = 512;
-// MKL_INT k = 512;
+// int m = 512;
+// int n = 512;
+// int k = 512;
 
-// MKL_INT m = 1024;
-// MKL_INT n = 1024;
-// MKL_INT k = 1024;
+// int m = 1024;
+// int n = 1024;
+// int k = 1024;
 
-MKL_INT m = 4609;
-MKL_INT n = 511;
-MKL_INT k = 784;
+int m = 4609;
+int n = 511;
+int k = 784;
 
-// MKL_INT m = 2048;
-// MKL_INT n = 2048;
-// MKL_INT k = 2048;
+// int m = 8192;
+// int n = 8192;
+// int k = 8192;
 
 float *A, *B, *C;
-MKL_INT lda, ldb, ldc;
+int lda, ldb, ldc;
 
-void multiply_mkl() {
-    float beta = 0;
-    float alpha = 1;
-    SGEMM("T", "N", &m, &n, &k, &alpha, A, &lda, B, &ldb, &beta, C, &ldc);
-    volatile float x = C[0];
-    (void)x;
-}
-
-void multiply_llamafile() {
-    llamafile_sgemm(m, n, k, A, lda, B, ldb, C, ldc, 0, 0);
+void multiply_ansi() {
+    ansi_sgemm(m, n, k, A, lda, B, ldb, C, ldc, 0, 0);
     volatile float x = C[0];
     (void)x;
 }
@@ -598,29 +435,51 @@ long long micros(void) {
     return ts.tv_sec * 1000000 + (ts.tv_nsec + 999) / 1000;
 }
 
-#define ITERATIONS 1
-#define BENCH(x) \
+long kHuge1[300 * 1024 * 1024 / sizeof(long)];
+long kHuge2[300 * 1024 * 1024 / sizeof(long)];
+void smash_data_cache(void) {
+    int n = sizeof(kHuge1) / sizeof(*kHuge1);
+    for (int i = 0; i < n; ++i) {
+        kHuge1[i] = (kHuge1[i] + 1) * (kHuge2[n - i - 1] -= 1);
+    }
+}
+
+void warm_up_openmp(void) {
+    int n = sysconf(_SC_NPROCESSORS_ONLN);
+#pragma omp parallel for
+    for (int i = 0; i < n; ++i) {
+    }
+}
+
+#define BENCH(N, x) \
     do { \
-        x; \
+        if (N == 1) { \
+            warm_up_openmp(); \
+            smash_data_cache(); \
+        } else { \
+            x; \
+        } \
         long long t1 = micros(); \
-        for (long long i = 0; i < ITERATIONS; ++i) { \
+        for (long long i = 0; i < N; ++i) { \
             asm volatile("" ::: "memory"); \
             x; \
             asm volatile("" ::: "memory"); \
         } \
         long long t2 = micros(); \
-        printf("%8lld µs %s %g gigaflops\n", (t2 - t1 + ITERATIONS - 1) / ITERATIONS, #x, \
-               1e6 / ((t2 - t1 + ITERATIONS - 1) / ITERATIONS) * m * n * k * 1e-9); \
+        printf("%8lld µs %2dx n=%5d m=%5d k=%5d %s %g gigaflops\n", (t2 - t1 + N - 1) / N, N, \
+               (int)n, (int)m, (int)k, #x, 1e6 / ((t2 - t1 + N - 1) / N) * m * n * k * 1e-9); \
     } while (0)
 
 int main() {
-    A = llamafile_new_test_matrix<float>(m, k, &lda);
-    B = llamafile_new_test_matrix<float>(n, k, &ldb);
-    C = llamafile_new_test_matrix<float>(n, m, &ldc);
-    multiply_mkl(); // cold start
-    multiply_llamafile(); // cold start
-    BENCH(multiply_mkl());
-    BENCH(multiply_llamafile());
-    BENCH(multiply_mkl());
-    BENCH(multiply_llamafile());
+    printf("\n");
+    A = ansi_new_test_matrix<float>(m, k, &lda);
+    B = ansi_new_test_matrix<float>(n, k, &ldb);
+    C = ansi_new_test_matrix<float>(n, m, &ldc);
+    BENCH(1, multiply_ansi());
+    BENCH(1, multiply_ansi());
+    BENCH(1, multiply_ansi());
+    BENCH(1, multiply_ansi());
+    BENCH(1, multiply_ansi());
+    BENCH(1, multiply_ansi());
+    BENCH(20, multiply_ansi());
 }

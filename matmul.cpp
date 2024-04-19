@@ -456,12 +456,13 @@ class tinyBLAS {
             int ii = m0 + job / xtiles * RM;
             int jj = n0 + job % xtiles * RN;
             DOT Cv[RN][RM] = {0};
-            for (int l = 0; l < k; l += KN)
+            for (int l = 0; l < k; l += KN) {
                 for (int j = 0; j < RN; ++j)
                     for (int i = 0; i < RM; ++i)
                         Cv[j][i] = madd(load<VECTOR>(A + lda * (ii + i) + l), //
                                         load<VECTOR>(B + ldb * (jj + j) + l), //
                                         Cv[j][i]);
+            }
             TC Cd[RN][RM];
             for (int j = 0; j < RN; ++j)
                 for (int i = 0; i < RM; ++i)
@@ -559,21 +560,25 @@ void llamafile_sgemm(int m, int n, int k, const float *A, int lda, const float *
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-MKL_INT m = 512;
-MKL_INT n = 512;
-MKL_INT k = 512;
+// MKL_INT m = 512;
+// MKL_INT n = 512;
+// MKL_INT k = 512;
 
 // MKL_INT m = 1024;
 // MKL_INT n = 1024;
 // MKL_INT k = 1024;
 
-// MKL_INT m = 512;
-// MKL_INT n = 4609;
-// MKL_INT k = 784;
+MKL_INT m = 4609;
+MKL_INT n = 511;
+MKL_INT k = 784;
 
 // MKL_INT m = 2048;
 // MKL_INT n = 2048;
 // MKL_INT k = 2048;
+
+// MKL_INT m = 12288;
+// MKL_INT n = 12288;
+// MKL_INT k = 12288;
 
 float *A, *B, *C;
 MKL_INT lda, ldb, ldc;
@@ -598,29 +603,55 @@ long long micros(void) {
     return ts.tv_sec * 1000000 + (ts.tv_nsec + 999) / 1000;
 }
 
-#define ITERATIONS 1
-#define BENCH(x) \
+long kHuge1[300 * 1024 * 1024 / sizeof(long)];
+long kHuge2[300 * 1024 * 1024 / sizeof(long)];
+void smash_data_cache(void) {
+    int n = sizeof(kHuge1) / sizeof(*kHuge1);
+    for (int i = 0; i < n; ++i) {
+        kHuge1[i] = (kHuge1[i] + 1) * (kHuge2[n - i - 1] -= 1);
+    }
+}
+
+void warm_up_openmp(void) {
+    int n = sysconf(_SC_NPROCESSORS_ONLN);
+#pragma omp parallel for
+    for (int i = 0; i < n; ++i) {
+    }
+}
+
+#define BENCH(N, x) \
     do { \
-        x; \
+        if (N == 1) { \
+            warm_up_openmp(); \
+            smash_data_cache(); \
+        } else { \
+            x; \
+        } \
         long long t1 = micros(); \
-        for (long long i = 0; i < ITERATIONS; ++i) { \
+        for (long long i = 0; i < N; ++i) { \
             asm volatile("" ::: "memory"); \
             x; \
             asm volatile("" ::: "memory"); \
         } \
         long long t2 = micros(); \
-        printf("%8lld µs %s %g gigaflops\n", (t2 - t1 + ITERATIONS - 1) / ITERATIONS, #x, \
-               1e6 / ((t2 - t1 + ITERATIONS - 1) / ITERATIONS) * m * n * k * 1e-9); \
+        printf("%8lld µs %2dx n=%5d m=%5d k=%5d %s %g gigaflops\n", (t2 - t1 + N - 1) / N, N, \
+               (int)n, (int)m, (int)k, #x, 1e6 / ((t2 - t1 + N - 1) / N) * m * n * k * 1e-9); \
     } while (0)
 
 int main() {
     A = llamafile_new_test_matrix<float>(m, k, &lda);
     B = llamafile_new_test_matrix<float>(n, k, &ldb);
     C = llamafile_new_test_matrix<float>(n, m, &ldc);
-    multiply_mkl(); // cold start
-    multiply_llamafile(); // cold start
-    BENCH(multiply_mkl());
-    BENCH(multiply_llamafile());
-    BENCH(multiply_mkl());
-    BENCH(multiply_llamafile());
+
+    printf("\n");
+    BENCH(1, multiply_mkl());
+    BENCH(1, multiply_llamafile());
+
+    printf("\n");
+    BENCH(1, multiply_mkl());
+    BENCH(1, multiply_llamafile());
+
+    printf("\n");
+    BENCH(10, multiply_mkl());
+    BENCH(10, multiply_llamafile());
 }
