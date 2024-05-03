@@ -15,6 +15,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// immintrin perf on threadripper 7995wx (-march=znver4)
+//
+//     362 µs 10x n=  511 m= 4609 k=  784 multiply_llamafile() 5100.76 gigaflops
+//     942 µs 10x n=  511 m= 4609 k=  784 multiply_mkl() 1960.17 gigaflops
+//
+// ansi f32x16 perf on threadripper 7995wx (-march=znver4)
+//
+//     972 µs 20x n=  511 m= 4609 k=  784 multiply_ansi() 1899.67 gigaflops
+//
+// ansi f32x8 perf on threadripper 7995wx (-march=skylake)
+//
+//    1585 µs 20x n=  511 m= 4609 k=  784 multiply_ansi() 1164.97 gigaflops
+//
+// ansi f32x4 perf on threadripper 7995wx (-march=k8)
+//
+//   26767 µs 20x n=  511 m= 4609 k=  784 multiply_ansi() 68.9833 gigaflops
+//
+
 //
 //                   _   _          ___ _      _   ___
 //                  | |_(_)_ _ _  _| _ ) |    /_\ / __|
@@ -402,7 +420,23 @@ void ansi_sgemm(int m, int n, int k, const float *A, int lda, const float *B, in
     }
 }
 
+template <typename T>
+void naive(int m, int n, int k, const T *A, int lda, const T *B, int ldb, T *C, int ldc) {
+#pragma omp parallel for collapse(2) if (m * n * k > 300000)
+    for (int i = 0; i < m; ++i)
+        for (int j = 0; j < n; ++j) {
+            T d = 0;
+            for (int l = 0; l < k; ++l)
+                d += A[lda * i + l] * B[ldb * j + l];
+            C[ldc * j + i] = d;
+        }
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
+int m = 64;
+int n = 768;
+int k = 768;
 
 // int m = 512;
 // int n = 512;
@@ -412,9 +446,9 @@ void ansi_sgemm(int m, int n, int k, const float *A, int lda, const float *B, in
 // int n = 1024;
 // int k = 1024;
 
-int m = 4609;
-int n = 511;
-int k = 784;
+// int m = 4609;
+// int n = 511;
+// int k = 784;
 
 // int m = 8192;
 // int n = 8192;
@@ -422,6 +456,12 @@ int k = 784;
 
 float *A, *B, *C;
 int lda, ldb, ldc;
+
+void multiply_naive() {
+    naive(m, n, k, A, lda, B, ldb, C, ldc);
+    volatile float x = C[0];
+    (void)x;
+}
 
 void multiply_ansi() {
     ansi_sgemm(m, n, k, A, lda, B, ldb, C, ldc, 0, 0);
@@ -475,11 +515,6 @@ int main() {
     A = ansi_new_test_matrix<float>(m, k, &lda);
     B = ansi_new_test_matrix<float>(n, k, &ldb);
     C = ansi_new_test_matrix<float>(n, m, &ldc);
-    BENCH(1, multiply_ansi());
-    BENCH(1, multiply_ansi());
-    BENCH(1, multiply_ansi());
-    BENCH(1, multiply_ansi());
-    BENCH(1, multiply_ansi());
-    BENCH(1, multiply_ansi());
-    BENCH(20, multiply_ansi());
+    BENCH(400, multiply_ansi());
+    BENCH(400, multiply_naive());
 }

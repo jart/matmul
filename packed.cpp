@@ -15,21 +15,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/*
-
-g++ -g -Wall -O3 -fopenmp -pthread -DMKL_ILP64 \
-  -I/opt/intel/oneapi/mkl/2024.1/include -Wframe-larger-than=65536 \
-  -Walloca-larger-than=65536 -march=native -c -o asd.o asd.cpp
-g++ -g -Wall -O3 -fopenmp -pthread -DMKL_ILP64 \
-  -I/opt/intel/oneapi/mkl/2024.1/include -Wframe-larger-than=65536 \
-  -Walloca-larger-than=65536 -o asd asd.o -Wl,--start-group \
-  /opt/intel/oneapi/mkl/2024.1/lib/libmkl_intel_ilp64.a \
-  /opt/intel/oneapi/mkl/2024.1/lib/libmkl_gnu_thread.a \
-  /opt/intel/oneapi/mkl/2024.1/lib/libmkl_core.a -Wl,--end-group -lm
-./asd
-
-*/
-
 //
 //                   _   _          ___ _      _   ___
 //                  | |_(_)_ _ _  _| _ ) |    /_\ / __|
@@ -102,16 +87,9 @@ inline float numba(void) { // (-1,1)
     return float01(rand32()) * 2 - 1;
 }
 
-template <typename T> void clean(int m, int n, T *A, int lda) {
-    for (int i = 0; i < m; ++i)
-        for (int j = n; j < lda; ++j)
-            A[lda * i + j] = 0;
-}
-
-template <typename T> void randomize(int m, int n, T *A, int lda) {
-    for (int i = 0; i < m; ++i)
-        for (int j = 0; j < n; ++j)
-            A[lda * i + j] = numba();
+template <typename T> void randomize(T *A, int n) {
+    for (int i = 0; i < n; ++i)
+        A[i] = numba();
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -283,8 +261,8 @@ template <typename T, typename U> inline U madder(T a, T b, U c, U *e) {
 template <int KN, typename DOT, typename VECTOR, typename TA, typename TB, typename TC>
 class tinyBLAS {
   public:
-    tinyBLAS(const TA *A, int lda, const TB *B, int ldb, TC *C, int ldc, int ith, int nth)
-        : A(A), B(B), C(C), lda(lda), ldb(ldb), ldc(ldc), ith(ith), nth(nth) {
+    tinyBLAS(const TA *A, const TB *B, TC *C, int ith, int nth)
+        : A(A), B(B), C(C), ith(ith), nth(nth) {
     }
 
     void matmul(int m, int n, int k) {
@@ -459,8 +437,8 @@ class tinyBLAS {
             for (int l = 0; l < k; l += KN) {
                 for (int j = 0; j < RN; ++j)
                     for (int i = 0; i < RM; ++i)
-                        Cv[j][i] = madd(load<VECTOR>(A + lda * (ii + i) + l), //
-                                        load<VECTOR>(B + ldb * (jj + j) + l), //
+                        Cv[j][i] = madd(load<VECTOR>(A + k * (ii + i) + l), //
+                                        load<VECTOR>(B + k * (jj + j) + l), //
                                         Cv[j][i]);
             }
             TC Cd[RN][RM];
@@ -469,112 +447,82 @@ class tinyBLAS {
                     Cd[j][i] = hsum(Cv[j][i]);
             for (int j = 0; j < RN; ++j)
                 for (int i = 0; i < RM; ++i)
-                    C[ldc * (jj + j) + (ii + i)] = Cd[j][i];
+                    C[m * (jj + j) + (ii + i)] = Cd[j][i];
         }
     }
 
     const TA *const A;
     const TB *const B;
     TC *const C;
-    const int lda;
-    const int ldb;
-    const int ldc;
     const int ith;
     const int nth;
 };
 
-static void llamafile_sgemm_impl(int m, int n, int k, const float *A, int lda, const float *B,
-                                 int ldb, float *C, int ldc, int ith, int nth) {
+static void llamafile_sgemm_impl(int m, int n, int k, const float *A, const float *B, float *C,
+                                 int ith, int nth) {
     assert(m >= 0);
     assert(n >= 0);
     assert(k >= 0);
-    assert(lda >= k);
-    assert(ldb >= k);
-    assert(ldc >= m);
     assert(nth > 0);
     assert(ith < nth);
-    assert(1ll * lda * m <= 0x7fffffff);
-    assert(1ll * ldb * n <= 0x7fffffff);
-    assert(1ll * ldc * n <= 0x7fffffff);
+    assert(1ll * k * m <= 0x7fffffff);
+    assert(1ll * k * n <= 0x7fffffff);
+    assert(1ll * m * n <= 0x7fffffff);
 #if defined(__AVX512F__)
-    assert(!(lda % (64 / sizeof(float))));
-    assert(!(ldb % (64 / sizeof(float))));
-    tinyBLAS<16, __m512, __m512, float, float, float> tb{A, lda, B, ldb, C, ldc, ith, nth};
+    assert(!(k % (64 / sizeof(float))));
+    tinyBLAS<16, __m512, __m512, float, float, float> tb{A, B, C, ith, nth};
     tb.matmul(m, n, k);
 #elif defined(__AVX__) || defined(__AVX2__)
-    assert(!(lda % (32 / sizeof(float))));
-    assert(!(ldb % (32 / sizeof(float))));
-    tinyBLAS<8, __m256, __m256, float, float, float> tb{A, lda, B, ldb, C, ldc, ith, nth};
+    assert(!(k % (32 / sizeof(float))));
+    tinyBLAS<8, __m256, __m256, float, float, float> tb{A, B, C, ith, nth};
     tb.matmul(m, n, k);
 #elif defined(__SSE__)
-    assert(!(lda % (16 / sizeof(float))));
-    assert(!(ldb % (16 / sizeof(float))));
-    tinyBLAS<4, __m128, __m128, float, float, float> tb{A, lda, B, ldb, C, ldc, ith, nth};
+    assert(!(k % (16 / sizeof(float))));
+    tinyBLAS<4, __m128, __m128, float, float, float> tb{A, B, C, ith, nth};
     tb.matmul(m, n, k);
 #elif defined(__ARM_NEON)
-    assert(!(lda % (16 / sizeof(float))));
-    assert(!(ldb % (16 / sizeof(float))));
-    tinyBLAS<4, float32x4_t, float32x4_t, float, float, float> tb{A, lda, B, ldb, C, ldc, ith, nth};
+    assert(!(k % (16 / sizeof(float))));
+    tinyBLAS<4, float32x4_t, float32x4_t, float, float, float> tb{A, B, C, ith, nth};
     tb.matmul(m, n, k);
 #else
-    tinyBLAS<1, float, float, float, float, float> tb{A, lda, B, ldb, C, ldc, ith, nth};
+    tinyBLAS<1, float, float, float, float, float> tb{A, B, C, ith, nth};
     tb.matmul(m, n, k);
 #endif
 }
 
 } // namespace
 
-template <typename T, typename U> T *llamafile_malloc(int m, int n, U *out_lda) {
+template <typename T> T *llamafile_malloc(int m, int n) {
     void *ptr;
-    int b = 64 / sizeof(T);
-    int lda = (n + b - 1) & -b;
-    size_t size = sizeof(T) * m * lda;
+    size_t size = sizeof(T) * m * n;
     if ((errno = posix_memalign(&ptr, sysconf(_SC_PAGESIZE), size))) {
         perror("posix_memalign");
         exit(1);
     }
-    *out_lda = lda;
     return (T *)ptr;
 }
 
-template <typename T, typename U> T *llamafile_new_test_matrix(int m, int n, U *out_lda) {
-    T *A = llamafile_malloc<T>(m, n, out_lda);
-    randomize(m, n, A, *out_lda);
-    clean(m, n, A, *out_lda);
+template <typename T> T *llamafile_new_test_matrix(int m, int n) {
+    T *A = llamafile_malloc<T>(m, n);
+    randomize(A, m * n);
     return A;
 }
 
-void llamafile_sgemm(int m, int n, int k, const float *A, int lda, const float *B, int ldb,
-                     float *C, int ldc, int ith, int nth) {
+void llamafile_sgemm(int m, int n, int k, const float *A, const float *B, float *C, int ith,
+                     int nth) {
     if (nth) {
-        llamafile_sgemm_impl(m, n, k, A, lda, B, ldb, C, ldc, ith, nth);
+        llamafile_sgemm_impl(m, n, k, A, B, C, ith, nth);
     } else if (!HAVE_OPENMP || 1ll * n * m * k < 3000000) {
-        llamafile_sgemm_impl(m, n, k, A, lda, B, ldb, C, ldc, 0, 1);
+        llamafile_sgemm_impl(m, n, k, A, B, C, 0, 1);
     } else {
         nth = sysconf(_SC_NPROCESSORS_ONLN);
 #pragma omp parallel for
         for (ith = 0; ith < nth; ++ith)
-            llamafile_sgemm_impl(m, n, k, A, lda, B, ldb, C, ldc, ith, nth);
+            llamafile_sgemm_impl(m, n, k, A, B, C, ith, nth);
     }
 }
 
-template <typename T>
-void naive(int m, int n, int k, const T *A, int lda, const T *B, int ldb, T *C, int ldc) {
-#pragma omp parallel for collapse(2) if (m * n * k > 300000)
-    for (int i = 0; i < m; ++i)
-        for (int j = 0; j < n; ++j) {
-            T d = 0;
-            for (int l = 0; l < k; ++l)
-                d += A[lda * i + l] * B[ldb * j + l];
-            C[ldc * j + i] = d;
-        }
-}
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-
-MKL_INT m = 64;
-MKL_INT n = 768;
-MKL_INT k = 768;
 
 // MKL_INT m = 512;
 // MKL_INT n = 512;
@@ -584,9 +532,9 @@ MKL_INT k = 768;
 // MKL_INT n = 1024;
 // MKL_INT k = 1024;
 
-// MKL_INT m = 4609;
-// MKL_INT n = 511;
-// MKL_INT k = 784;
+MKL_INT m = 4609;
+MKL_INT n = 511;
+MKL_INT k = 784;
 
 // MKL_INT m = 2048;
 // MKL_INT n = 2048;
@@ -597,24 +545,20 @@ MKL_INT k = 768;
 // MKL_INT k = 12288;
 
 float *A, *B, *C;
-MKL_INT lda, ldb, ldc;
 
 void multiply_mkl() {
     float beta = 0;
     float alpha = 1;
+    MKL_INT lda = k;
+    MKL_INT ldb = k;
+    MKL_INT ldc = m;
     SGEMM("T", "N", &m, &n, &k, &alpha, A, &lda, B, &ldb, &beta, C, &ldc);
     volatile float x = C[0];
     (void)x;
 }
 
 void multiply_llamafile() {
-    llamafile_sgemm(m, n, k, A, lda, B, ldb, C, ldc, 0, 0);
-    volatile float x = C[0];
-    (void)x;
-}
-
-void multiply_naive() {
-    naive(m, n, k, A, lda, B, ldb, C, ldc);
+    llamafile_sgemm(m, n, k, A, B, C, 0, 0);
     volatile float x = C[0];
     (void)x;
 }
@@ -661,17 +605,19 @@ void warm_up_openmp(void) {
     } while (0)
 
 int main() {
-    printf("\n");
-    A = llamafile_new_test_matrix<float>(m, k, &lda);
-    B = llamafile_new_test_matrix<float>(n, k, &ldb);
-    C = llamafile_new_test_matrix<float>(n, m, &ldc);
-    BENCH(400, multiply_mkl());
-    BENCH(400, multiply_naive());
-    BENCH(400, multiply_llamafile());
-}
+    A = llamafile_new_test_matrix<float>(m, k);
+    B = llamafile_new_test_matrix<float>(n, k);
+    C = llamafile_new_test_matrix<float>(n, m);
 
-//  83 µs 400x n=  768 m=   64 k=  768 multiply_mkl() 454.804 gigaflops
-// 166 µs 400x n=  768 m=   64 k=  768 multiply_naive() 227.402 gigaflops
-//  65 µs 400x n=  768 m=   64 k=  768 multiply_llamafile() 580.75 gigaflops
-//  69 µs 400x n=  768 m=   64 k=  768 multiply_ansi() 547.083 gigaflops
-// 304 µs 400x n=  768 m=   64 k=  768 multiply_naive() 124.173 gigaflops
+    printf("\n");
+    BENCH(1, multiply_mkl());
+    BENCH(1, multiply_llamafile());
+
+    printf("\n");
+    BENCH(1, multiply_mkl());
+    BENCH(1, multiply_llamafile());
+
+    printf("\n");
+    BENCH(10, multiply_mkl());
+    BENCH(10, multiply_llamafile());
+}
