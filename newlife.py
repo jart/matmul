@@ -1,33 +1,43 @@
 MAX_M = 5
 MAX_N = 5
 print()
-print("switch ((std::min(m - m0, %d) << 4) | std::min(n - n0, %d)) {" % (MAX_M, MAX_N))
 for VECTOR_REGISTERS in (32, 16):
 
   print("#if VECTOR_REGISTERS == %d" % (VECTOR_REGISTERS))
 
-  a = []
-  specified = set()
+  # choose tile size that exploits all vector registers
+  specified = {}
   for mc in range(1, MAX_M + 1):
-    # if mc > 4 and mc % 4 != 0:
-    #   continue
     for nc in range(1, MAX_N + 1):
-      v = min(mc * nc + mc + 1,
-              mc * nc + nc + 1)
-      if v > VECTOR_REGISTERS:
-        continue
-      s = ""
-      s += "case 0x%x%x:\n" % (mc, nc)
-      s += "    mc = %d;\n" % (mc)
-      s += "    nc = %d;\n" % (nc)
-      s += "    gemm<%d, %d>(m0, m, n0, n);\n" % (mc, nc)
-      s += "    break;"
-      if mc % 8 == 0:
-        v += 2
-      if mc % 4 == 0:
-        v += 1
-      a.append((v, mc, nc, s, []))
-      specified.add((mc, nc))
+      memory_loads = mc + nc
+      accumulators = mc * nc
+      v = accumulators + memory_loads // 2
+      if v <= VECTOR_REGISTERS:
+        if mc % 8 == 0:
+          v += 2
+        if mc % 4 == 0:
+          v += 1
+        specified[mc, nc] = v
+
+  # generate code for handling biggest tile (e.g. 5x5)
+  # generate code for handling edge tiles (i.e. <=2x2)
+  # avoid long compile times to generate tiles between
+  (best_mc, best_nc), best_v = list(sorted(specified.items(), key=lambda s: s[1]))[-1]
+  for (mc, nc), v in list(specified.items()):
+    if v < best_v and (mc > 2 or nc > 2):
+      del specified[mc, nc]
+
+  print("switch ((std::min(m - m0, %d) << 4) | std::min(n - n0, %d)) {" % (best_mc, best_nc))
+
+  a = []
+  for (mc, nc), v in specified.items():
+    s = ""
+    s += "case 0x%x%x:\n" % (mc, nc)
+    s += "    mc = %d;\n" % (mc)
+    s += "    nc = %d;\n" % (nc)
+    s += "    gemm<%d, %d>(m0, m, n0, n);\n" % (mc, nc)
+    s += "    break;"
+    a.append((v, mc, nc, s, []))
 
   a = list(reversed(sorted(a)))
 
@@ -45,8 +55,7 @@ for VECTOR_REGISTERS in (32, 16):
       print(e)
     print(s)
 
+  print("default:")
+  print("    return;")
+  print("}")
   print("#endif")
-
-print("default:")
-print("    return;")
-print("}")

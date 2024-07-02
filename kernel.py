@@ -1,5 +1,5 @@
 RM = 8
-RN = 8
+RN = 3
 
 print()
 print("NOINLINE void gemm%dx%d(int m0, int m, int n0, int n) {" % (RM, RN))
